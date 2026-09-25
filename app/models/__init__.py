@@ -4,6 +4,7 @@ from app.models.transaction import Transaction
 from app.models.ledger import LedgerEntry
 from app.models.card import Card
 from app.models.kyc import KYCDocument
+from app.models.kyc_attachment import KYCAttachment
 from app.models.aml import AMLCheck
 from app.models.audit import AuditLog
 from app.models.user import User

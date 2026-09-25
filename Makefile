@@ -1,4 +1,4 @@
-.PHONY: up down migrate seed test api frontend
+.PHONY: up down migrate seed test api frontend reconcile
 up:
 	docker compose up --build -d
 down:
@@ -13,3 +13,5 @@ api:
 	python -m uvicorn app.main:app --reload
 frontend:
 	cd banking-frontend && npm run dev
+reconcile:
+	python -m scripts.reconcile

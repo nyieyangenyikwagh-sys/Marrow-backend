@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -11,6 +11,38 @@ from app.schemas.kyc import KYCSubmitRequest, KYCDocumentResponse, KYCStatusResp
 from app.services.kyc_service import KYCService
 
 router = APIRouter(prefix="/kyc", tags=["kyc"])
+
+
+@router.post("/attachments", status_code=201)
+async def upload_attachment(file: UploadFile = File(...), role: str = Form(...),
+                            db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    from sqlalchemy import func
+    from app.models import Customer, KYCAttachment
+    from app.core.encryption import EncryptionService
+    from app.services.audit_service import AuditService
+    if role not in {"front", "back", "selfie"}:
+        raise ValueError("Invalid document role")
+    data = await file.read(5 * 1024 * 1024 + 1)
+    await file.close()
+    if not data or len(data) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Each file must be between 1 byte and 5 MB")
+    content_type = ("image/png" if data.startswith(b"\x89PNG\r\n\x1a\n") else
+                    "image/jpeg" if data.startswith(b"\xff\xd8\xff") else
+                    "application/pdf" if data.startswith(b"%PDF-") else None)
+    if not content_type or (role == "selfie" and content_type == "application/pdf"):
+        raise ValueError("Use PNG or JPEG images, or PDF for identity documents")
+    await db.scalar(select(Customer).where(Customer.id == user.id).with_for_update())
+    count = await db.scalar(select(func.count()).select_from(KYCAttachment).where(KYCAttachment.customer_id == user.id))
+    if count >= 20:
+        raise ValueError("Identity upload quota reached; contact support")
+    attachment = KYCAttachment(customer_id=user.id, role=role, content_type=content_type,
+                               size=len(data), encrypted_data=EncryptionService._get_cipher().encrypt(data))
+    db.add(attachment)
+    await db.flush()
+    await AuditService.log_action(db, entity_type="kyc_attachment", entity_id=attachment.id,
+                                  action="uploaded", actor_id=user.id, actor_type="customer")
+    await db.commit()
+    return {"id": str(attachment.id), "reference": f"attachment:{attachment.id}"}
 
 
 class ReviewRequest(BaseModel):

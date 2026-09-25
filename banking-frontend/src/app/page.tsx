@@ -43,6 +43,9 @@ import {
   type Card,
 } from "@/lib/api";
 
+import { Operations } from "@/components/operations";
+import { CardControls, StatementDownload } from "@/components/account-controls";
+
 const money = (v: string | number, currency = "CAD") =>
   new Intl.NumberFormat("en-CA", { style: "currency", currency }).format(
     Number(v),
@@ -55,19 +58,6 @@ const date = (v: string) =>
   });
 type Modal =
   "transfer" | "account" | "card" | "kyc" | "profile" | "help" | null;
-type ReviewDoc = {
-  id: string;
-  customer_id: string;
-  document_type: string;
-  created_at: string;
-};
-type Audit = {
-  id: string;
-  action: string;
-  entity_type: string;
-  created_at: string;
-  actor_type: string;
-};
 function Badge({ value }: { value: string }) {
   return (
     <span
@@ -86,9 +76,6 @@ export default function Home() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
-  const [customers, setCustomers] = useState<Person[]>([]);
-  const [docs, setDocs] = useState<ReviewDoc[]>([]);
-  const [audit, setAudit] = useState<Audit[]>([]);
   const [summary, setSummary] = useState<Record<string, number>>({});
   const [modal, setModal] = useState<Modal>(null);
   const [busy, setBusy] = useState(false);
@@ -99,12 +86,6 @@ export default function Home() {
   const [mobile, setMobile] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState("CAD");
-  const [reviewNotes, setReviewNotes] = useState("");
-  const [sensitive, setSensitive] = useState<Record<
-    string,
-    string | null
-  > | null>(null);
-  const [reviewing, setReviewing] = useState<string | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
   const dialogRef = useRef<HTMLElement>(null);
   const transferKey = useRef("");
@@ -115,23 +96,13 @@ export default function Home() {
     try {
       if (isStaff) {
         const user = await api<Person>("/admin/me");
-        const [stats, people] = await Promise.all([
-          api<Record<string, number>>("/admin/summary"),
-          api<Person[]>("/customers?page_size=100"),
-        ]);
+        const stats = await api<Record<string, number>>("/admin/summary");
         setSummary(stats);
-        setCustomers(people);
         if (user.role !== "support") {
-          const [tx, documents, logs] = await Promise.all([
-            api<Transaction[]>(
-              `/admin/transactions?limit=50&offset=${page * 50}`,
-            ),
-            api<ReviewDoc[]>("/admin/kyc"),
-            api<Audit[]>("/admin/audit"),
-          ]);
+          const tx = await api<Transaction[]>(
+            `/admin/transactions?limit=50&offset=${page * 50}`,
+          );
           setTransactions(tx);
-          setDocs(documents);
-          setAudit(logs);
         }
         setPerson(user);
       } else {
@@ -238,6 +209,8 @@ export default function Home() {
         ["Overview", LayoutDashboard],
         ["Reviews", ShieldCheck],
         ["Customers", Users],
+        ["Accounts", Wallet],
+        ["AML checks", ShieldCheck],
         ["Activity", ArrowLeftRight],
         ["Audit log", FileText],
       ] as const)
@@ -262,7 +235,8 @@ export default function Home() {
       .includes(search.toLowerCase()),
   );
   const ownedIds = new Set(accounts.map((a) => a.id));
-  const pending = transactions.filter((t) => t.status === "pending");
+  const pendingCount =
+    (summary.pending_transfers || 0) + (summary.pending_kyc || 0);
   const title = tab === "Overview" ? `Welcome back, ${person.first_name}` : tab;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -277,11 +251,33 @@ export default function Home() {
             account_type: data.account_type || "checking",
           });
         if (modal === "card") await post("/cards", data);
-        if (modal === "kyc")
+        if (modal === "kyc") {
+          const references: Record<string, string> = {};
+          for (const [field, role] of [
+            ["document_front_url", "front"],
+            ["document_back_url", "back"],
+            ["selfie_url", "selfie"],
+          ]) {
+            const file = form.get(field) as File;
+            if (!file?.size) continue;
+            if (file.size > 5 * 1024 * 1024)
+              throw new Error("Each identity file must be 5 MB or smaller.");
+            const upload = new FormData();
+            upload.set("file", file);
+            upload.set("role", role);
+            const result = await api<{ reference: string }>(
+              "/kyc/attachments",
+              { method: "POST", body: upload },
+            );
+            references[field] = result.reference;
+          }
           await post("/kyc/documents", {
-            ...data,
+            document_type: data.document_type,
+            document_number: data.document_number,
+            ...references,
             expiry_date: data.expiry_date || null,
           });
+        }
         if (modal === "profile")
           await api("/customers/me", {
             method: "PATCH",
@@ -310,22 +306,6 @@ export default function Home() {
       modal === "transfer"
         ? "Transfer request processed."
         : "Saved successfully.",
-    );
-  }
-  async function reviewTransfer(t: Transaction, decision: string) {
-    if (reviewNotes.trim().length < 3) {
-      setError("Add review notes before making a decision.");
-      return;
-    }
-    await action(
-      () =>
-        post(
-          `/transactions/${t.id}/${decision === "reverse" ? "reverse" : `review/${decision}`}`,
-          decision === "reverse"
-            ? { reason: reviewNotes }
-            : { notes: reviewNotes },
-        ),
-      `Transaction ${decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "reversed"}.`,
     );
   }
 
@@ -367,10 +347,8 @@ export default function Home() {
               >
                 <Icon size={19} />
                 {name}
-                {name === "Reviews" && pending.length + docs.length > 0 && (
-                  <span className="nav-count">
-                    {pending.length + docs.length}
-                  </span>
+                {name === "Reviews" && pendingCount > 0 && (
+                  <span className="nav-count">{pendingCount}</span>
                 )}
               </button>
             ))}
@@ -405,10 +383,6 @@ export default function Home() {
               } catch {
               } finally {
                 setPerson(null);
-                setSensitive(null);
-                setReviewing(null);
-                setCustomers([]);
-                setDocs([]);
                 setAccounts([]);
                 setTransactions([]);
                 setCards([]);
@@ -680,6 +654,7 @@ export default function Home() {
                         <FileText size={14} /> Statement
                       </button>
                     </div>
+                    <StatementDownload accountId={a.id} />
                   </div>
                 ))}
               </div>
@@ -844,6 +819,7 @@ export default function Home() {
                         </button>
                       )}
                     </div>
+                    <CardControls card={card} updated={() => load(false)} />
                   </div>
                 ))}
               </div>
@@ -922,269 +898,16 @@ export default function Home() {
             </>
           )}
 
-          {staff && tab === "Customers" && (
-            <Section
-              title="Customer directory"
-              subtitle="Up to 100 customers. Account status changes require a reason."
-            >
-              <label className="search directory-search">
-                <Search size={16} />
-                <input
-                  placeholder="Search name or email"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </label>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Customer</th>
-                      <th>Identity</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customers
-                      .filter((c) =>
-                        `${c.first_name} ${c.last_name} ${c.email}`
-                          .toLowerCase()
-                          .includes(search.toLowerCase()),
-                      )
-                      .map((c) => (
-                        <tr key={c.id}>
-                          <td>
-                            <strong>
-                              {c.first_name} {c.last_name}
-                            </strong>
-                            <small>{c.email}</small>
-                          </td>
-                          <td>
-                            <Badge value={c.kyc_status || "pending"} />
-                          </td>
-                          <td>
-                            <Badge value={c.customer_status || "active"} />
-                          </td>
-                          <td>
-                            {person.role !== "support" && (
-                              <button
-                                className="text-button"
-                                disabled={busy || !reviewNotes.trim()}
-                                onClick={() =>
-                                  action(
-                                    () =>
-                                      post(
-                                        `/customers/${c.id}/${c.customer_status === "frozen" ? "unfreeze" : "freeze"}?reason=${encodeURIComponent(reviewNotes)}`,
-                                        {},
-                                      ),
-                                    "Customer status updated.",
-                                  )
-                                }
-                              >
-                                {c.customer_status === "frozen"
-                                  ? "Unfreeze"
-                                  : "Freeze"}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              {person.role !== "support" && (
-                <label className="review-notes">
-                  Reason for status change
-                  <input
-                    value={reviewNotes}
-                    onChange={(e) => setReviewNotes(e.target.value)}
-                    placeholder="Add a reason before changing status"
-                  />
-                </label>
-              )}
-            </Section>
-          )}
-
-          {staff && tab === "Reviews" && (
-            <>
-              <label className="review-notes">
-                Decision notes
-                <textarea
-                  value={reviewNotes}
-                  onChange={(e) => setReviewNotes(e.target.value)}
-                  placeholder="Record the reason for your decision (required)"
-                  maxLength={190}
-                />
-              </label>
-              <Section
-                title="Identity verification"
-                subtitle="Open the document details before approving or rejecting."
-              >
-                {docs.map((doc) => (
-                  <div className="review-row" key={doc.id}>
-                    <div>
-                      <strong>{doc.document_type.replaceAll("_", " ")}</strong>
-                      <small>
-                        {doc.customer_id} · {date(doc.created_at)}
-                      </small>
-                    </div>
-                    <button
-                      className="secondary"
-                      onClick={() =>
-                        action(async () => {
-                          setSensitive(
-                            await api<Record<string, string | null>>(
-                              `/admin/kyc/${doc.id}`,
-                            ),
-                          );
-                          setReviewing(doc.id);
-                        }, "Document access recorded.")
-                      }
-                    >
-                      View details
-                    </button>
-                    {reviewing === doc.id && (
-                      <>
-                        <button
-                          className="secondary"
-                          disabled={busy || reviewNotes.length < 3}
-                          onClick={() =>
-                            action(
-                              () =>
-                                post(`/kyc/${doc.id}/review`, {
-                                  approve: false,
-                                  notes: reviewNotes,
-                                }),
-                              "Identity rejected.",
-                            )
-                          }
-                        >
-                          Reject
-                        </button>
-                        <button
-                          className="primary"
-                          disabled={busy || reviewNotes.length < 3}
-                          onClick={() =>
-                            action(
-                              () =>
-                                post(`/kyc/${doc.id}/review`, {
-                                  approve: true,
-                                  notes: reviewNotes,
-                                }),
-                              "Identity approved.",
-                            )
-                          }
-                        >
-                          Approve
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-                {!docs.length && (
-                  <Empty
-                    icon={<Check />}
-                    title="All caught up"
-                    text="No identity documents are waiting for review."
-                  />
-                )}
-                {sensitive && (
-                  <div className="sensitive-details">
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setSensitive(null);
-                        setReviewing(null);
-                      }}
-                    >
-                      Close document details <X size={15} />
-                    </button>
-                    {Object.entries(sensitive).map(([key, value]) => (
-                      <p key={key}>
-                        <strong>{key.replaceAll("_", " ")}:</strong>{" "}
-                        {value || "—"}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </Section>
-              <Section
-                title="Transfer decisions"
-                subtitle="Approvals recheck available funds and limits. Reversals create new ledger entries."
-              >
-                {transactions
-                  .filter((t) => ["pending", "completed"].includes(t.status))
-                  .map((t) => (
-                    <div className="review-row" key={t.id}>
-                      <div>
-                        <strong>{money(t.amount, t.currency_code)}</strong>
-                        <small>{t.reference_number}</small>
-                      </div>
-                      <Badge value={t.status} />
-                      {t.status === "pending" ? (
-                        <>
-                          <button
-                            disabled={busy}
-                            className="secondary"
-                            onClick={() => reviewTransfer(t, "reject")}
-                          >
-                            Reject
-                          </button>
-                          <button
-                            disabled={busy}
-                            className="primary"
-                            onClick={() => reviewTransfer(t, "approve")}
-                          >
-                            Approve
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          disabled={busy}
-                          className="secondary"
-                          onClick={() => reviewTransfer(t, "reverse")}
-                        >
-                          Reverse
-                        </button>
-                      )}
-                    </div>
-                  ))}
-              </Section>
-            </>
-          )}
-
-          {staff && tab === "Audit log" && (
-            <Section
-              title="An unbroken record"
-              subtitle="The latest 50 events. Audit records cannot be edited or deleted."
-            >
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Event</th>
-                      <th>Entity</th>
-                      <th>Actor</th>
-                      <th>When</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {audit.map((a) => (
-                      <tr key={a.id}>
-                        <td>
-                          <strong>{a.action.replaceAll("_", " ")}</strong>
-                        </td>
-                        <td>{a.entity_type}</td>
-                        <td>{a.actor_type}</td>
-                        <td>{new Date(a.created_at).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Section>
-          )}
+          {staff &&
+            [
+              "Customers",
+              "Accounts",
+              "Reviews",
+              "AML checks",
+              "Audit log",
+            ].includes(tab) && (
+              <Operations key={tab} section={tab} role={person.role} />
+            )}
           <footer className="page-footer">
             <span>
               <ShieldCheck size={14} /> Built around a clear record of your
@@ -1400,20 +1123,28 @@ export default function Home() {
                       <input name="document_number" required maxLength={100} />
                     </label>
                     <label>
-                      Document front URL
+                      Document front (PNG, JPEG or PDF, up to 5 MB)
                       <input
                         name="document_front_url"
-                        type="url"
-                        placeholder="https://…"
+                        type="file"
+                        accept="image/png,image/jpeg,application/pdf"
                         required
                       />
                     </label>
                     <label>
-                      Selfie URL
+                      Document back (optional)
+                      <input
+                        name="document_back_url"
+                        type="file"
+                        accept="image/png,image/jpeg,application/pdf"
+                      />
+                    </label>
+                    <label>
+                      Selfie (PNG or JPEG, up to 5 MB)
                       <input
                         name="selfie_url"
-                        type="url"
-                        placeholder="https://…"
+                        type="file"
+                        accept="image/png,image/jpeg"
                         required
                       />
                     </label>
@@ -1422,8 +1153,8 @@ export default function Home() {
                       <input name="expiry_date" type="date" />
                     </label>
                     <p className="form-note">
-                      For this sandbox, use test identity details and test image
-                      links. Staff review is manual.
+                      Use test identity details and files in this sandbox. Files
+                      are encrypted at rest; staff review is manual.
                     </p>
                   </>
                 )}
@@ -1692,8 +1423,7 @@ function Login({ onLogin }: { onLogin: (staff: boolean) => Promise<void> }) {
         <div className="login-story">
           <span className="pill">MORE LIFE. LESS BANKING.</span>
           <h1>
-            Make room{" "}
-            <br />
+            Make room <br />
             for what
             <br />
             <em>moves you.</em>

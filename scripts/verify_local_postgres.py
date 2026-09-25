@@ -21,6 +21,9 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     binaries = root / ".tools/postgres/node_modules/@embedded-postgres/windows-x64/native/bin"
+    clients = root / ".tools/postgres-clients/pgsql/bin"
+    if not (clients / "pg_dump.exe").is_file():
+        clients = binaries
     if not (binaries / "postgres.exe").is_file():
         raise SystemExit("Workspace-local PostgreSQL binaries are not installed")
     data = root / ".tools" / f"postgres-test-{uuid4().hex}"
@@ -54,8 +57,21 @@ def main():
             asyncio.run(ready())
             subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=root, env=env, check=True)
             subprocess.run([sys.executable, "-c", "import asyncio; from scripts.seed import seed; asyncio.run(seed('LocalTestPassword123!', demo=True))"], cwd=root, env=env, check=True)
+            subprocess.run([sys.executable, "-m", "scripts.reconcile"], cwd=root, env=env, check=True)
+            subprocess.run([sys.executable, "-m", "scripts.backup", str(data / "verified.dump"), "--bin-dir", str(clients)], cwd=root, env=env, check=True)
+            async def create_restore_database():
+                import asyncpg
+                conn = await asyncpg.connect(host="127.0.0.1", port=port, user="banking", database="postgres")
+                await conn.execute("CREATE DATABASE backup_restore_check")
+                await conn.close()
+            asyncio.run(create_restore_database())
+            restore_env = {**env, "PGHOST": "127.0.0.1", "PGPORT": str(port), "PGUSER": "banking", "PGDATABASE": "backup_restore_check"}
+            subprocess.run([str(clients / "pg_restore.exe"), "--exit-on-error", "--dbname", "backup_restore_check", str(data / "verified.dump")],
+                           cwd=root, env=restore_env, creationflags=hidden, check=True)
+            restore_env["DATABASE_URL"] = f"postgresql+asyncpg://banking@127.0.0.1:{port}/backup_restore_check"
+            subprocess.run([sys.executable, "-m", "scripts.reconcile"], cwd=root, env=restore_env, check=True)
             subprocess.run([sys.executable, "-m", "pytest", "-q", "--tb=short"], cwd=root, env=env, check=True)
-            print("PostgreSQL migration, demo seed, and full test suite verified.")
+            print("PostgreSQL migrations, demo seed, reconciliation, backup/restore, and full test suite verified.")
         finally:
             subprocess.run([str(binaries / "pg_ctl.exe"), "-D", str(data / "data"), "stop", "-m", "fast"],
                            creationflags=hidden, timeout=20, check=False, env=native_env)

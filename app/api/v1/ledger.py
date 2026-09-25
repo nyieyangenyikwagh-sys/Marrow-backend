@@ -11,6 +11,35 @@ from app.schemas.ledger import BalanceResponse, LedgerEntryResponse, StatementRe
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
 
+@router.get("/{account_id}/statement-csv")
+async def statement_csv(account_id: UUID, start: datetime, end: datetime,
+                         db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
+    import csv
+    import io
+    from fastapi.responses import Response
+    from app.core.constants import EntryType
+    account = await owned(db, account_id, user)
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("Statement dates must include a timezone")
+    statement = await LedgerService.get_statement(db, account_id, start, end)
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Reference", "Description", "Debit", "Credit", "Balance", "Currency"])
+    balance = statement["opening_balance"]
+    writer.writerow([start.isoformat(), "", "Opening balance", "", "", str(balance), account.currency_code])
+    def safe(value):
+        value = str(value or "")
+        return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")) else value
+    for entry in statement["entries"]:
+        credit = entry.entry_type == EntryType.CREDIT
+        balance += entry.amount if credit else -entry.amount
+        writer.writerow([entry.entry_date.isoformat(), safe(entry.reference_number), safe(entry.description),
+                         "" if credit else str(entry.amount), str(entry.amount) if credit else "", str(balance), account.currency_code])
+    writer.writerow([end.isoformat(), "", "Closing balance", "", "", str(balance), account.currency_code])
+    return Response(output.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="statement-{account_id}.csv"'})
+
+
 async def owned(db, account_id, user):
     account = await db.get(Account, account_id)
     if not account or account.customer_id != user.id or account.is_internal:

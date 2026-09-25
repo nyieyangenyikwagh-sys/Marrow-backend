@@ -30,16 +30,18 @@ async function renew() {
   setTokens(await response.json());
   return true;
 }
-export async function api<T = unknown>(
+export async function request(
   path: string,
   options: RequestInit = {},
   retry = true,
-): Promise<T> {
+): Promise<Response> {
   const response = await fetch(`/api${path}`, {
     ...options,
     cache: "no-store",
     headers: {
-      "Content-Type": "application/json",
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...(access ? { Authorization: `Bearer ${access}` } : {}),
       ...options.headers,
     },
@@ -53,17 +55,38 @@ export async function api<T = unknown>(
     refreshing ||= renew().finally(() => {
       refreshing = null;
     });
-    if (await refreshing) return api<T>(path, options, false);
+    if (await refreshing) return request(path, options, false);
   }
-  if (response.status === 204) return undefined as T;
-  const data = await response.json();
-  if (!response.ok)
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
     throw new Error(
       Array.isArray(data.detail)
         ? data.detail.map((x: { msg: string }) => x.msg).join(". ")
         : data.detail || "Request could not be completed",
     );
-  return data;
+  }
+  return response;
+}
+export async function api<T = unknown>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const response = await request(path, options);
+  return response.status === 204 ? (undefined as T) : response.json();
+}
+export async function download(path: string, filename?: string) {
+  const response = await request(path);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download =
+    filename ||
+    response.headers
+      .get("content-disposition")
+      ?.match(/filename="([^"]+)"/)?.[1] ||
+    "document";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 export const post = <T = unknown>(path: string, body: unknown) =>
   api<T>(path, { method: "POST", body: JSON.stringify(body) });
@@ -98,6 +121,8 @@ export type Transaction = {
   transaction_date: string;
 };
 export type Card = {
+  daily_limit: string | null;
+  monthly_limit: string | null;
   id: string;
   account_id: string;
   card_last_4: string;

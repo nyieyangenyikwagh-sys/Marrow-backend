@@ -1811,11 +1811,153 @@ td small {
   }
 }
 @media (max-height: 850px) {
-  .support-box { display: none; }
+  .support-box {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+/* Staff workflows and customer account controls */
+.operations {
+  background: white;
+  border: 1px solid #e3e8e6;
+  border-radius: 18px;
+  padding: 24px;
+}
+.operations h2 {
+  margin: 0 0 8px;
+}
+.operations p,
+.card-controls p {
+  color: #64736c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.operations label,
+.statement-form label,
+.ops-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.operations input,
+.operations select,
+.operations textarea,
+.statement-form input,
+.ops-form input {
+  border: 1px solid #dce4df;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #20342b;
+  max-width: 100%;
+  min-width: 0;
+  font: inherit;
+}
+.ops-toolbar,
+.ops-toolbar form,
+.ops-actions,
+.statement-form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+.ops-toolbar span {
+  align-self: center;
+  font-size: 13px;
+}
+.ops-reason {
+  max-width: 700px;
+  margin-bottom: 20px;
+}
+.ops-reason textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+.ops-record {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 0;
+  border-top: 1px solid #e8eee9;
+}
+.ops-record-main {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.ops-record small {
+  color: #687b70;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ops-record span {
+  font-size: 12px;
+}
+.ops-actions {
+  justify-content: flex-end;
+  max-width: 55%;
+  align-items: center;
+  margin: 0;
+}
+.ops-actions details {
+  max-width: 100%;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ops-actions pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ops-editor {
+  background: #f2f8f4;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+.ops-form {
+  display: grid;
+  gap: 14px;
+  max-width: 440px;
+}
+.ops-error {
+  color: #a32e2e !important;
+}
+.statement-form {
+  padding: 0 14px 16px;
+}
+.statement-form label {
+  flex: 1;
+  min-width: 110px;
+}
+.card-controls:has(.ops-form),
+.card-controls:has(.ops-toolbar) {
+  display: block;
+}
+@media (max-width: 700px) {
+  .operations {
+    padding: 16px;
+  }
+  .ops-record {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .ops-actions {
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+  .ops-toolbar form,
+  .ops-toolbar label {
+    width: 100%;
   }
 }

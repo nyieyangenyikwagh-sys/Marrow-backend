@@ -29,6 +29,11 @@ class TransactionService:
             accounts = await TransferService.lock_accounts(db, [row.from_account_id, row.to_account_id])
             source, destination = accounts[row.from_account_id], accounts[row.to_account_id]
             await TransferService.validate_accounts(db, source, destination, row.amount, row.fee_amount, row.id)
+            from app.models.customer import Customer
+            from app.core.config import settings
+            customer = await db.get(Customer, source.customer_id)
+            if customer.risk_score >= settings.AML_HIGH_RISK_THRESHOLD:
+                raise PermissionError("Customer risk must be reassessed before this transfer can be approved")
             await TransferService.post(db, row, source, destination)
             row.completed_at = datetime.now(timezone.utc)
         row.status = status

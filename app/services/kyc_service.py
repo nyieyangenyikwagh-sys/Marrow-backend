@@ -22,6 +22,14 @@ class KYCService:
         if pending:
             raise ValueError("A document is already awaiting review")
         values = data.model_dump()
+        from uuid import UUID
+        from app.models.kyc_attachment import KYCAttachment
+        for field, role in (("document_front_url", "front"), ("document_back_url", "back"), ("selfie_url", "selfie")):
+            reference = values.get(field)
+            if reference and reference.startswith("attachment:"):
+                attachment = await db.get(KYCAttachment, UUID(reference.split(":", 1)[1]))
+                if not attachment or attachment.customer_id != customer_id or attachment.role != role:
+                    raise ValueError("Identity attachment does not belong to this customer or document field")
         for field in ("document_number", "document_front_url", "document_back_url", "selfie_url"):
             if values.get(field):
                 values[field] = EncryptionService.encrypt(values[field])

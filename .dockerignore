@@ -7,3 +7,5 @@ __pycache__
 *.db
 uploads
 test-results
+backups
+*.dump

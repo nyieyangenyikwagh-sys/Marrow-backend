@@ -19,6 +19,9 @@ class KYCSubmitRequest(BaseModel):
     @classmethod
     def document_link(cls, value):
         from urllib.parse import urlparse
+        if value and value.startswith("attachment:"):
+            UUID(value.removeprefix("attachment:"))
+            return value
         if value is not None and (len(value) > 2048 or urlparse(value).scheme not in {"https", "http"} or not urlparse(value).netloc):
             raise ValueError("Document references must be HTTP(S) URLs")
         return value

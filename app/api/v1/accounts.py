@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.database import get_db
 from app.dependencies import get_current_user, require_role
@@ -15,12 +15,12 @@ from app.schemas.account import AccountCreate, AccountResponse
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 class LimitsUpdateRequest(BaseModel):
-    daily_limit: Optional[Decimal] = None
-    monthly_limit: Optional[Decimal] = None
-    transaction_limit: Optional[Decimal] = None
+    daily_limit: Optional[Decimal] = Field(None, gt=0, max_digits=20, decimal_places=2)
+    monthly_limit: Optional[Decimal] = Field(None, gt=0, max_digits=20, decimal_places=2)
+    transaction_limit: Optional[Decimal] = Field(None, gt=0, max_digits=20, decimal_places=2)
 
 class StatusChangeRequest(BaseModel):
-    reason: str
+    reason: str = Field(min_length=3, max_length=500)
 
 @router.post("/{account_id}/unfreeze", response_model=AccountResponse)
 async def unfreeze_account(account_id: UUID, data: StatusChangeRequest, db: AsyncSession = Depends(get_db),
@@ -73,6 +73,7 @@ async def update_account_limits(
         account = await AccountService.update_limits(
             db, account_id, staff.id,
             data.daily_limit, data.monthly_limit, data.transaction_limit,
+            fields=data.model_fields_set,
         )
         await db.commit()
         return account

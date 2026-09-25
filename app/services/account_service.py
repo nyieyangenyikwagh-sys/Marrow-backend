@@ -74,11 +74,14 @@ class AccountService:
     @staticmethod
     async def update_limits(
         db: AsyncSession, account_id: UUID, admin_id: UUID,
-        daily_limit=None, monthly_limit=None, transaction_limit=None,
+        daily_limit=None, monthly_limit=None, transaction_limit=None, fields=None,
     ) -> Account:
         account = await LedgerService.lock_account_for_update(db, account_id)
         if not account:
             raise ValueError("Account not found")
+
+        if account.is_internal or account.account_status == AccountStatus.CLOSED:
+            raise ValueError("Only open customer accounts can have limits changed")
 
         old_values = {
             "daily_limit": account.daily_limit, "monthly_limit": account.monthly_limit,
@@ -87,19 +90,19 @@ class AccountService:
         for value in (daily_limit, monthly_limit, transaction_limit):
             if value is not None and (not value.is_finite() or value <= 0):
                 raise ValueError("Limits must be positive finite amounts")
-        if daily_limit is not None:
+        if daily_limit is not None or fields and "daily_limit" in fields:
             account.daily_limit = daily_limit
-        if monthly_limit is not None:
+        if monthly_limit is not None or fields and "monthly_limit" in fields:
             account.monthly_limit = monthly_limit
-        if transaction_limit is not None:
+        if transaction_limit is not None or fields and "transaction_limit" in fields:
             account.transaction_limit = transaction_limit
 
         await AuditService.log_action(
             db=db, entity_type="account", entity_id=account.id, action="limits_updated",
             actor_id=admin_id, actor_type="admin",
             old_values={k: str(v) if v else None for k, v in old_values.items()},
-            new_values={"daily_limit": str(daily_limit), "monthly_limit": str(monthly_limit),
-                        "transaction_limit": str(transaction_limit)},
+            new_values={field: str(getattr(account, field)) if getattr(account, field) is not None else None
+                        for field in ("daily_limit", "monthly_limit", "transaction_limit")},
         )
         return account
 

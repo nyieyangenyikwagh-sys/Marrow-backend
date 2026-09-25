@@ -76,6 +76,14 @@ class CustomerService:
         if customer.customer_status == new_status:
             raise ValueError(f"Customer is already {new_status.value}")
 
+        from app.models.account import Account
+        if await db.scalar(select(Account.id).where(Account.customer_id == customer_id, Account.is_internal.is_(True)).limit(1)):
+            raise ValueError("System customers cannot be changed")
+        if customer.customer_status == CustomerStatus.CLOSED:
+            raise ValueError("Closed customers cannot be reopened")
+        if not 3 <= len(reason.strip()) <= 500:
+            raise ValueError("A reason of 3 to 500 characters is required")
+
         old_status = customer.customer_status
         customer.customer_status = new_status
 

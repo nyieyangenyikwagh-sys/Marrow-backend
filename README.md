@@ -59,9 +59,11 @@ This workspace also contains a locally downloaded Python toolchain under the ign
 - Sorted account locks, atomic posting, four ledger legs when fees are nonzero, and two legs for amounts whose rounded fee is zero.
 - Transfers of 10,000 or more enter manual review. High-risk customers produce failed requests and an AML record without moving funds. Approval rechecks balances, status, identity, and limits under locks. Pending requests do not reserve funds.
 - Reversal creates a new transaction and opposite ledger entries, including the fee. Original entries stay intact. Reversal cannot overdraw a customer, and the original transaction can be reversed only once.
-- Manual KYC submission/review with encrypted document numbers and references. Staff document access is audited. The sandbox accepts image URLs; it does not fetch those URLs or claim to perform automated identity checks.
-- Sandbox card creation, freezing/unfreezing, and cancellation via API. No actual PAN or CVV is issued or stored.
-- Append-only audit history, health checks, Prometheus metrics, request IDs, responsive customer and staff screens, and downloadable JSON statements.
+- Manual KYC submission/review with encrypted document numbers, references, and uploaded files. The UI accepts PNG/JPEG images and PDF documents, up to 5 MB per file; selfies must be images. Upload references are checked for owner and document role. Staff downloads require compliance/admin authorization and create audit events. Existing HTTP(S) references remain supported by the API; the server never fetches them. There is no automated identity verification or malware scanning.
+- Sandbox card creation, freezing/unfreezing, editable limits, and permanent cancellation from the UI. No actual PAN or CVV is issued or stored, and card limits are metadata until a card-network integration exists.
+- Paginated staff customer/account directories, identity and transfer queues, AML checks, and searchable append-only audit history. Compliance staff can record risk assessments; high-risk customers cannot have pending transfers approved until reassessed. Support staff have read-only customer directory access.
+- Health checks, Prometheus metrics, request IDs, responsive customer and staff screens, JSON statements, and CSV exports with selectable UTC date ranges, opening/closing balances, and formula-safe descriptions.
+- Read-only reconciliation and PostgreSQL custom-archive backup utilities, with a disposable-database restore verification helper.
 
 ## Ledger and security boundaries
 
@@ -115,9 +117,25 @@ Arrange off-host PostgreSQL backups and restore drills, key rotation, monitoring
 | Customer | `/customers/me`, `/customers`, `/customers/{id}/freeze`, `/customers/{id}/unfreeze` |
 | Accounts | `/accounts`, `/accounts/me`, `/accounts/{id}`, `/accounts/{id}/limits`, `/freeze`, `/unfreeze`, `/close` |
 | Money | `/transactions/transfer`, `/transactions`, `/transactions/{id}`, `/{id}/review/approve`, `/{id}/review/reject`, `/{id}/reverse` |
-| Ledger | `/ledger/{account_id}/balance`, `/entries`, `/statement?start=…&end=…` |
-| Identity | `/kyc/documents`, `/kyc/status`, `/kyc/{id}/review` |
-| Cards | `/cards`, `/cards/{id}/status` |
-| Operations | `/admin/me`, `/admin/summary`, `/admin/transactions`, `/admin/kyc`, `/admin/aml`, `/admin/audit` |
+| Ledger | `/ledger/{account_id}/balance`, `/entries`, `/statement?start=…&end=…`, `/statement-csv?start=…&end=…` |
+| Identity | `/kyc/attachments`, `/kyc/documents`, `/kyc/status`, `/kyc/{id}/review` |
+| Cards | `/cards`, `/cards/{id}/status`, `/cards/{id}/limits` |
+| Operations | `/admin/me`, `/admin/summary`, `/admin/customers`, `/admin/customers/{id}/risk`, `/admin/accounts`, `/admin/transactions`, `/admin/kyc`, `/admin/attachments/{id}`, `/admin/aml`, `/admin/audit` |
 
-Use the generated OpenAPI documentation for exact schemas and full paths. Transaction and staff-history endpoints have bounded pagination. The staff screens show the latest 50 reviews/audit entries and the first 100 directory records; the API exposes additional pages.
+Use the generated OpenAPI documentation for exact schemas and full paths. Staff workbenches page through 25 records at a time; transaction history uses 50. Customer, account and audit directories support server-side search. Limits accept explicit `null` to remove a limit; omitted fields remain unchanged.
+
+## Updates and operational commands
+
+Existing databases need the encrypted-attachments migration before using the new identity form:
+
+```powershell
+.venv/Scripts/python.exe -m alembic upgrade head
+.venv/Scripts/python.exe -m scripts.reconcile
+.venv/Scripts/python.exe -m scripts.backup backups/banking.dump
+```
+
+Reconciliation uses a read-only repeatable-read PostgreSQL snapshot and exits with code 1 when it finds unbalanced postings, missing/extra transaction legs, ownership/currency mismatches, or negative customer balances. This checks internal accounting; external settlement reconciliation needs an external payment provider.
+
+Backup requires `pg_dump` and `pg_restore` on PATH, or `--bin-dir` pointing to a compatible PostgreSQL client directory. It uses `DATABASE_URL`, keeps the database password out of command arguments, refuses to overwrite files, and checks the archive with `pg_restore --list`. A failed invocation may leave an incomplete archive; only a successful verification reports it as verified. Archives contain sensitive database data and must be protected and copied to controlled off-host storage. Back up `ENCRYPTION_KEY` separately; losing it makes identity numbers and files unreadable. Restore into a fresh, isolated database with `pg_restore --exit-on-error --dbname <restore_database> <archive>`, then run reconciliation against that database before considering recovery complete. The local verification helper performs this restore drill automatically against a disposable server.
+
+Identity uploads are stored as encrypted database blobs, so they are included in database backups. Each customer is limited to 20 uploads. This sandbox has no deletion/retention administration or object-storage integration; define those policies before collecting real documents. The existing `KYC_DOCUMENT_STORAGE_PATH` setting is reserved and is not used by database-backed uploads.
