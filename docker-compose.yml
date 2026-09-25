@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: banking
+      POSTGRES_PASSWORD: banking
+      POSTGRES_DB: banking_core
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banking -d banking_core"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://banking:banking@postgres:5432/banking_core
+      REDIS_URL: redis://redis:6379/0
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://banking:banking@postgres:5432/banking_core
+      REDIS_URL: redis://redis:6379/0
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  frontend:
+    build: ./banking-frontend
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports: ["127.0.0.1:${FRONTEND_PORT:-3001}:3000"]
+    depends_on: [api]
+volumes:
+  postgres_data:
+  redis_data:

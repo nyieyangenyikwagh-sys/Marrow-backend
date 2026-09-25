@@ -1,0 +1,80 @@
+"""Explicit demo seed. Never runs automatically on application startup."""
+import argparse
+import asyncio
+import getpass
+import secrets
+from datetime import datetime, timezone
+from decimal import Decimal
+from sqlalchemy import select
+from app.core.database import AsyncSessionLocal
+from app.core.security import hash_password
+from app.core.config import settings
+from app.core.constants import AccountType, KYCStatus, UserRole, TransactionType, TransactionStatus, EntryType
+from app.models import Customer, Account, User, Transaction
+from app.services.ledger_service import LedgerService
+from app.services.audit_service import AuditService
+
+CURRENCIES = ("USD", "CAD", "GBP", "EUR")
+
+
+async def seed(password, demo=False):
+    if demo and settings.ENVIRONMENT == "production":
+        raise ValueError("Demo funding is disabled in production")
+    async with AsyncSessionLocal() as db:
+        internal = await db.scalar(select(Customer).where(Customer.email == "system@koho.internal"))
+        if not internal:
+            internal = Customer(email="system@koho.internal", password_hash=hash_password(secrets.token_urlsafe(48)),
+                                first_name="Bank", last_name="System", kyc_status=KYCStatus.VERIFIED)
+            db.add(internal)
+            await db.flush()
+        for currency in CURRENCIES:
+            for name in ("SYSTEM-FEE-REVENUE", "SYSTEM-CLEARING"):
+                number = f"{name}-{currency}"
+                if not await db.scalar(select(Account.id).where(Account.account_number == number)):
+                    db.add(Account(customer_id=internal.id, account_name=name, account_number=number,
+                                   account_type=AccountType.CHECKING, currency_code=currency, is_internal=True))
+        if not await db.scalar(select(User.id).where(User.email == "admin@koho.local")):
+            db.add(User(email="admin@koho.local", password_hash=hash_password(password),
+                        first_name="Alex", last_name="Morgan", role=UserRole.ADMIN))
+        if demo:
+            for email, first, last in (("alex@example.com", "Alex", "Morgan"), ("sam@example.com", "Sam", "Chen")):
+                customer = await db.scalar(select(Customer).where(Customer.email == email))
+                if customer:
+                    continue
+                customer = Customer(email=email, first_name=first, last_name=last,
+                    password_hash=hash_password(password), kyc_status=KYCStatus.VERIFIED, country="CA",
+                    kyc_verified_at=datetime.now(timezone.utc))
+                db.add(customer)
+                await db.flush()
+                for kind, amount in ((AccountType.CHECKING, Decimal("12500.00")), (AccountType.SAVINGS, Decimal("8200.00"))):
+                    account = Account(customer_id=customer.id, account_name="Everyday spending" if kind == AccountType.CHECKING else "Rainy day savings",
+                        account_number=f"{kind.value[:3].upper()}-{secrets.randbelow(10**10):010d}",
+                        account_type=kind, currency_code="CAD", is_primary=kind == AccountType.CHECKING,
+                        daily_limit=Decimal("25000"), monthly_limit=Decimal("100000"), transaction_limit=Decimal("20000"))
+                    db.add(account)
+                    await db.flush()
+                    clearing = await db.scalar(select(Account).where(Account.account_number == "SYSTEM-CLEARING-CAD"))
+                    now = datetime.now(timezone.utc)
+                    txn = Transaction(from_customer_id=internal.id, from_account_id=clearing.id,
+                        to_customer_id=customer.id, to_account_id=account.id, transaction_type=TransactionType.DEPOSIT,
+                        amount=amount, fee_amount=Decimal("0"), currency_code="CAD", status=TransactionStatus.COMPLETED,
+                        idempotency_key=f"demo-opening-{account.id}", description="Demo opening funds",
+                        reference_number=f"DEMO-{secrets.token_hex(8).upper()}", transaction_date=now, completed_at=now)
+                    db.add(txn)
+                    await db.flush()
+                    for a, direction in ((clearing, EntryType.DEBIT), (account, EntryType.CREDIT)):
+                        await LedgerService.create_entry(db, txn.id, a.id, a.customer_id, direction,
+                                                         amount, "CAD", "Demo opening funds")
+                    await AuditService.log_action(db, entity_type="transaction", entity_id=txn.id, action="demo_funding")
+        await db.commit()
+    print("Seed complete. Staff: admin@koho.local" + ("; customers: alex@example.com, sam@example.com" if demo else ""))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--demo", action="store_true")
+    args = parser.parse_args()
+    password = getpass.getpass("Set password for new seed users (minimum 12 characters): ")
+    if len(password) < 12:
+        raise SystemExit("Password must have at least 12 characters")
+    asyncio.run(seed(password, args.demo))

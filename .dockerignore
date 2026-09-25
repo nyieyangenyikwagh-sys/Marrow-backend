@@ -1,0 +1,9 @@
+.git
+.env
+.venv
+.tools
+banking-frontend
+__pycache__
+*.db
+uploads
+test-results
