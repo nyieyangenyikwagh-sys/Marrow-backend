@@ -1,7 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+
+from pydantic import BaseModel, Field, StringConstraints
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Login looks up an existing identifier, including seeded .local accounts.
+    # Public email validation belongs at signup, not authentication.
+    email: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
     password: str = Field(min_length=1, max_length=128)
 
 class TokenResponse(BaseModel):
