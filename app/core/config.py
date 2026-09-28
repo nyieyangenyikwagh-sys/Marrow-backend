@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Literal
 from cryptography.fernet import Fernet
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SQLALCHEMY_ECHO: bool = False
     REDIS_URL: str = "redis://localhost:6379/0"
+    SESSION_BACKEND: Literal["redis", "sqlite"] | None = None
+    LOCAL_SESSION_DB: str = ".tools/local-sessions.db"
     SECRET_KEY: str = Field(min_length=32)
     ENCRYPTION_KEY: str
     ALGORITHM: str = "HS256"
@@ -34,6 +37,8 @@ class Settings(BaseSettings):
             raise ValueError("Only HS256 is configured")
         if self.ENVIRONMENT == "production" and not self.DATABASE_URL.startswith("postgresql"):
             raise ValueError("Production requires PostgreSQL")
+        if self.SESSION_BACKEND == "sqlite" and self.ENVIRONMENT != "development":
+            raise ValueError("SQLite sessions are only supported in development")
         return self
 
     @property

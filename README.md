@@ -28,6 +28,10 @@ All newly seeded users receive the password you chose. Demo opening funds are ba
 
 ## Local development
 
+With `ENVIRONMENT=development`, authentication uses a persistent SQLite session store at `.tools/local-sessions.db`, so Redis is not needed for local login. Rate limits and refresh-token revocations are shared across local workers and survive API restarts. Set `SESSION_BACKEND=redis` to exercise Redis locally. Other environments use Redis; SQLite sessions are refused outside development. PostgreSQL must still be running. Restart the API after changing configuration or updating code without auto-reload.
+
+After starting PostgreSQL and seeding demo accounts, run `.venv/Scripts/python.exe -m scripts.check_login` and enter your seed password to verify customer and staff login, authenticated profiles, refresh, logout, and revocation against your configured storage.
+
 Python 3.12+, Node.js 22+, PostgreSQL 16, and Redis 7 are expected. PostgreSQL and Redis can run in Docker while the API and frontend run locally:
 
 ```powershell

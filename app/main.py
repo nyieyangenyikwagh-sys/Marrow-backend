@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 import time
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -41,14 +42,15 @@ for router in (auth.router, customers.router, accounts.router, transactions.rout
 @app.middleware("http")
 async def observe(request: Request, call_next):
     start, request_id = time.perf_counter(), str(uuid4())
-    # Authentication throttling is shared across workers; fail closed if Redis is unavailable.
+    # Authentication throttling is shared across workers; fail closed if storage is unavailable.
     if request.url.path.startswith("/api/v1/auth/") and request.method == "POST":
         key = f"auth-rate:{request.client.host}:{int(time.time() // 60)}"
         try:
             count = await client.eval("local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],60) end; return n", 1, key)
             if count > 30:
                 return JSONResponse({"detail": "Too many attempts; try again in a minute"}, 429, headers={"Retry-After": "60"})
-        except RedisError:
+        except (RedisError, sqlite3.Error, OSError):
+            logger.exception("Authentication session storage unavailable")
             return JSONResponse({"detail": "Authentication service temporarily unavailable"}, 503)
     response = await call_next(request)
     route = request.scope.get("route")
@@ -77,6 +79,7 @@ async def conflict(request, exc):
 
 
 @app.exception_handler(RedisError)
+@app.exception_handler(sqlite3.Error)
 async def cache_unavailable(request, exc):
     return JSONResponse({"detail": "Session service temporarily unavailable"}, 503)
 

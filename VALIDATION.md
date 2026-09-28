@@ -1,5 +1,13 @@
 # Verification record
 
+Verified on 2026-09-28 for the local authentication fix:
+
+- **32 backend tests passed**, including PostgreSQL integration tests. The session-store tests exercise actual SQLite storage, concurrent rate counts, expiry, persisted revocation, and production configuration restrictions.
+- Unmocked API checks against a temporary PostgreSQL database verified seeded staff and customer login, profiles, refresh, logout, and revoked-token rejection with the development session store and no Redis.
+- **4 browser tests passed** using controlled API fixtures.
+- Migrations, seeding, reconciliation, and backup/restore passed. The temporary database was stopped after verification; these checks do not start the user's configured application database or validate their existing password.
+- Docker Desktop could not start. Native PostgreSQL verification succeeded with `--runtime-dir 'C:/Program Files/Insta360 Studio'`.
+
 Verified on 2026-09-25 in this workspace:
 
 - **22 backend tests passed**, including real PostgreSQL concurrent retries, competing debits, concurrent reversal, immutable-record triggers, fee accounting, rollback, permissions, authentication, KYC, and cards. New coverage includes encrypted uploads, owner/role checks, upload limits, audited downloads, customer risk changes, approval rechecks, paginated search, card/account limits, CSV ownership, and reconciliation detecting damaged postings.

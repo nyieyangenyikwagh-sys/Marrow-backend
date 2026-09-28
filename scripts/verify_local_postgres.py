@@ -57,6 +57,10 @@ def main():
             asyncio.run(ready())
             subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=root, env=env, check=True)
             subprocess.run([sys.executable, "-c", "import asyncio; from scripts.seed import seed; asyncio.run(seed('LocalTestPassword123!', demo=True))"], cwd=root, env=env, check=True)
+            login_env = {**env, "ENVIRONMENT": "development", "SESSION_BACKEND": "sqlite",
+                         "LOCAL_SESSION_DB": str(data / "sessions.db")}
+            subprocess.run([sys.executable, "-c", "import asyncio; from scripts.check_login import check_login; asyncio.run(check_login('LocalTestPassword123!'))"],
+                           cwd=root, env=login_env, check=True)
             subprocess.run([sys.executable, "-m", "scripts.reconcile"], cwd=root, env=env, check=True)
             subprocess.run([sys.executable, "-m", "scripts.backup", str(data / "verified.dump"), "--bin-dir", str(clients)], cwd=root, env=env, check=True)
             async def create_restore_database():
