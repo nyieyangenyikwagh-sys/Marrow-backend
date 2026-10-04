@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "KOHO | Your money, in your hands",
+  title: "Morrow | Your money, in your hands",
   description: "Your everyday banking, together in one place.",
 };
 export default function Layout({

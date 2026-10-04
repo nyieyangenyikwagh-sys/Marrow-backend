@@ -22,11 +22,21 @@ Open **http://localhost:3001**. API documentation is at **http://localhost:8000/
 | --- | --- |
 | `alex@example.com` | Customer, with CAD checking and savings accounts |
 | `sam@example.com` | Second customer for transfers |
-| `admin@koho.local` | Staff sign-in, with review and audit access |
+| `admin@morrow.local` | Staff sign-in, with review and audit access |
 
 All newly seeded users receive the password you chose. Demo opening funds are balanced against an internal clearing account through `LedgerService`; no stored balance is assigned. Use `python -m scripts.seed` without `--demo` to create only internal accounts and an administrator. Demo funding is refused in production.
 
 ## Local development
+
+To create or repair the local administrator, run this after migrations:
+
+```powershell
+.venv/Scripts/python.exe -m scripts.seed --local-admin --reset-admin
+```
+
+For Docker, use `docker compose exec api python -m scripts.seed --local-admin --reset-admin`.
+Select **Staff sign in** in the frontend, then sign in with `admin@morrow.local` and password `123456781234`.
+This explicit reset updates an existing Morrow admin or migrates the old `admin@koho.local` seed account while preserving its ID. It restores the admin role and active status without resetting customer passwords or funding. `--local-admin` is restricted to development; other environments prompt for a password.
 
 With `ENVIRONMENT=development`, authentication uses a persistent SQLite session store at `.tools/local-sessions.db`, so Redis is not needed for local login. Rate limits and refresh-token revocations are shared across local workers and survive API restarts. Set `SESSION_BACKEND=redis` to exercise Redis locally. Other environments use Redis; SQLite sessions are refused outside development. PostgreSQL must still be running. Restart the API after changing configuration or updating code without auto-reload.
 

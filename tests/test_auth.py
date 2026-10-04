@@ -17,14 +17,28 @@ def local_sessions(tmp_path, monkeypatch):
 
 
 async def test_seeded_local_staff_login(client, factory, local_sessions):
-    password = "LocalStaffPassword123!"
+    from scripts.seed import seed
+    password = "123456781234"
     async with factory() as db:
-        db.add(User(email="admin@koho.local", password_hash=hash_password(password),
-                    first_name="Alex", last_name="Morgan", role=UserRole.ADMIN))
+        legacy = User(email="admin@koho.local", password_hash=hash_password("OldPassword123!"),
+                      first_name="Alex", last_name="Morgan", role=UserRole.SUPPORT, is_active=False)
+        db.add(legacy)
         await db.commit()
+        legacy_id = legacy.id
+
+    from unittest.mock import patch
+    with patch("scripts.seed.AsyncSessionLocal", factory):
+        await seed(password, reset_admin=True)
+        await seed("OtherPassword123!")
+
+    async with factory() as db:
+        admin = await db.get(User, legacy_id)
+        assert admin.email == "admin@morrow.local"
+        assert admin.role == UserRole.ADMIN
+        assert admin.is_active
 
     response = await client.post("/api/v1/auth/admin/login", json={
-        "email": " ADMIN@KOHO.LOCAL ", "password": password,
+        "email": " ADMIN@MORROW.LOCAL ", "password": password,
     })
     assert response.status_code == 200, response.text
     tokens = response.json()
@@ -33,10 +47,10 @@ async def test_seeded_local_staff_login(client, factory, local_sessions):
         "Authorization": f"Bearer {tokens['access_token']}",
     })
     assert profile.status_code == 200, profile.text
-    assert profile.json()["email"] == "admin@koho.local"
+    assert profile.json()["email"] == "admin@morrow.local"
 
     denied = await client.post("/api/v1/auth/admin/login", json={
-        "email": "admin@koho.local", "password": "incorrect-password",
+        "email": "admin@morrow.local", "password": "incorrect-password",
     })
     assert denied.status_code == 401
 

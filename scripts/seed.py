@@ -17,7 +17,12 @@ from app.services.audit_service import AuditService
 CURRENCIES = ("USD", "CAD", "GBP", "EUR")
 
 
-async def seed(password, demo=False):
+ADMIN_EMAIL = "admin@morrow.local"
+
+
+async def seed(password, demo=False, reset_admin=False):
+    if len(password) < 12:
+        raise ValueError("Password must have at least 12 characters")
     if demo and settings.ENVIRONMENT == "production":
         raise ValueError("Demo funding is disabled in production")
     async with AsyncSessionLocal() as db:
@@ -33,9 +38,20 @@ async def seed(password, demo=False):
                 if not await db.scalar(select(Account.id).where(Account.account_number == number)):
                     db.add(Account(customer_id=internal.id, account_name=name, account_number=number,
                                    account_type=AccountType.CHECKING, currency_code=currency, is_internal=True))
-        if not await db.scalar(select(User.id).where(User.email == "admin@koho.local")):
-            db.add(User(email="admin@koho.local", password_hash=hash_password(password),
-                        first_name="Alex", last_name="Morgan", role=UserRole.ADMIN))
+        admin = await db.scalar(select(User).where(User.email == ADMIN_EMAIL))
+        if not admin:
+            # Preserve the old seed administrator's identity when explicitly resetting.
+            if reset_admin:
+                admin = await db.scalar(select(User).where(User.email == "admin@koho.local"))
+            if not admin:
+                admin = User(email=ADMIN_EMAIL, password_hash=hash_password(password),
+                             first_name="Morrow", last_name="Admin", role=UserRole.ADMIN)
+                db.add(admin)
+        if reset_admin:
+            admin.email = ADMIN_EMAIL
+            admin.password_hash = hash_password(password)
+            admin.role = UserRole.ADMIN
+            admin.is_active = True
         if demo:
             for email, first, last in (("alex@example.com", "Alex", "Morgan"), ("sam@example.com", "Sam", "Chen")):
                 customer = await db.scalar(select(Customer).where(Customer.email == email))
@@ -67,14 +83,18 @@ async def seed(password, demo=False):
                                                          amount, "CAD", "Demo opening funds")
                     await AuditService.log_action(db, entity_type="transaction", entity_id=txn.id, action="demo_funding")
         await db.commit()
-    print("Seed complete. Staff: admin@koho.local" + ("; customers: alex@example.com, sam@example.com" if demo else ""))
+    print(f"Seed complete. Staff: {ADMIN_EMAIL}" + ("; customers: alex@example.com, sam@example.com" if demo else ""))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true")
+    parser.add_argument("--reset-admin", action="store_true", help="Reset the seed admin password, role and active status")
+    parser.add_argument("--local-admin", action="store_true", help="Use the requested local development admin password")
     args = parser.parse_args()
-    password = getpass.getpass("Set password for new seed users (minimum 12 characters): ")
+    if args.local_admin and settings.ENVIRONMENT != "development":
+        parser.error("--local-admin is only supported in development")
+    password = "123456781234" if args.local_admin else getpass.getpass("Set seed password (minimum 12 characters): ")
     if len(password) < 12:
         raise SystemExit("Password must have at least 12 characters")
-    asyncio.run(seed(password, args.demo))
+    asyncio.run(seed(password, args.demo, reset_admin=args.reset_admin))

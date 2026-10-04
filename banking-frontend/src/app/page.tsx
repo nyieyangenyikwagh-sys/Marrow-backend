@@ -312,8 +312,8 @@ export default function Home() {
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobile ? "is-open" : ""}`}>
-        <a className="brand" href="/" aria-label="KOHO home">
-          KOHO<span>®</span>
+        <a className="brand" href="/" aria-label="Morrow home">
+          MORROW<span>®</span>
         </a>
         <div className="workspace">
           <span className="workspace-icon">
@@ -776,7 +776,7 @@ export default function Home() {
                       className={`bank-card ${card.card_status === "frozen" ? "frozen" : ""}`}
                     >
                       <div>
-                        <strong>KOHO</strong>
+                        <strong>MORROW</strong>
                         <span>VIRTUAL · SANDBOX</span>
                       </div>
                       <div className="chip" />
@@ -914,7 +914,7 @@ export default function Home() {
               money.
             </span>
             <span>
-              KOHO Banking Core <span className="footer-dot">·</span> Sandbox
+              Morrow Banking Core <span className="footer-dot">·</span> Sandbox
               environment
             </span>
           </footer>
@@ -1418,7 +1418,7 @@ function Login({ onLogin }: { onLogin: (staff: boolean) => Promise<void> }) {
     <div className="login-page">
       <section className="login-art">
         <a className="brand" href="/">
-          KOHO<span>®</span>
+          MORROW<span>®</span>
         </a>
         <div className="login-story">
           <span className="pill">MORE LIFE. LESS BANKING.</span>
@@ -1433,7 +1433,7 @@ function Login({ onLogin }: { onLogin: (staff: boolean) => Promise<void> }) {
             <br />A little more freedom for everything else.
           </p>
           <div className="login-card">
-            <span>KOHO</span>
+            <span>MORROW</span>
             <div className="chip" />
             <strong>YOUR NEXT CHAPTER</strong>
             <small>Everyday possibilities.</small>

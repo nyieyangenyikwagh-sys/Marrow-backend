@@ -11,7 +11,7 @@ async def check_login(password):
         health = await client.get("/health")
         assert health.status_code == 200, "Database or session store unavailable"
         for email, route, profile in (
-            ("admin@koho.local", "admin/login", "/api/v1/admin/me"),
+            ("admin@morrow.local", "admin/login", "/api/v1/admin/me"),
             ("alex@example.com", "login", "/api/v1/customers/me"),
         ):
             response = await client.post(f"/api/v1/auth/{route}", json={"email": email, "password": password})
