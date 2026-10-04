@@ -8,6 +8,9 @@ Directory** set to `banking-frontend`.
 The included `railway.toml` files set the health checks. The backend entrypoint
 now runs database migrations and listens on Railway's runtime `PORT`.
 
+If Railway Networking already has a **Target Port** saved for the backend,
+set it to `8080` (the value shown in the backend startup log), then redeploy.
+
 ## Backend variables
 
 In the `marrow-backend` service, add these variables. Replace service names if

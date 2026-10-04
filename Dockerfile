@@ -8,5 +8,7 @@ COPY alembic.ini ./
 COPY scripts ./scripts
 RUN useradd --create-home appuser && mkdir -p /app/uploads && chown -R appuser:appuser /app
 USER appuser
-EXPOSE 8000
+# Railway's injected PORT is 8080 for this service. Keep the image metadata in
+# sync so Railway's public proxy targets the same port as Uvicorn.
+EXPOSE 8080
 CMD ["sh", "scripts/start-railway.sh"]
