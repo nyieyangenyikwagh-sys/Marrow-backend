@@ -1,4 +1,7 @@
+.env
+.env.*
+!.env.example
 node_modules
 .next
-.env*
 test-results
+playwright-report
